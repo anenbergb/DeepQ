@@ -116,8 +116,6 @@ function trans:fill_buffer(batch_size)
     end
 end
 
-
-
 function trans:sample_one_stratified(curr_ind, size_of_batch)
     assert(self.numEntries > 1)
     assert(curr_ind >= 1 and curr_ind <= self.bufferSize)
@@ -127,7 +125,7 @@ function trans:sample_one_stratified(curr_ind, size_of_batch)
     local start_index = 2 + (desired_bucket-1)*interval_size
     local end_index = start_index + interval_size - 1
     if desired_bucket == 0
-        desired_bucket = desired_bucket + 32
+        desired_bucket = desired_bucket + size_of_batch
         start_index = 2 + (desired_bucket-1)*interval_size
         end_index = self.numEntries-self.recentMemSize
     end 
@@ -154,6 +152,60 @@ function trans:sample_one_stratified(curr_ind, size_of_batch)
         end
     end
 
+    return self:get(index)
+end
+
+function trans:sample_one_sobol(curr_ind, size_of_batch)
+    assert(self.numEntries > 1)
+    assert(curr_ind >= 1 and curr_ind <= self.bufferSize)
+    assert(size_of_batch > 1)
+    -- this assumes batch_size is 32 
+    local sobol_sequence = {0.0, 0.03125, 0.0625, 0.09375, 0.125, 0.15625, 0.1875, 0.21875, 0.25, 0.28125, 0.3125, 0.34375, 0.375, 0.40625, 0.4375, 0.46875, 0.5, 0.53125, 0.5625, 0.59375, 0.625, 0.65625, 0.6875, 0.71875, 0.75, 0.78125, 0.8125, 0.84375, 0.875, 0.90625, 0.9375, 0.96875}
+    local desired_index = curr_ind % size_of_batch
+    if desired_index == 0 
+        desired_index = desired_index + size_of_batch
+    end 
+    local index
+    local valid = false
+    while not valid do
+        index = 2 + math.ceil(sobol_sequence[desired_index]*self.numEntries)
+        if self.t[index+self.recentMemSize-1] == 0 then
+            valid = true
+        end
+        if self.nonTermProb < 1 and self.t[index+self.recentMemSize] == 0 and
+            torch.uniform() > self.nonTermProb then
+            valid = false
+        end
+        if self.nonEventProb < 1 and self.t[index+self.recentMemSize] == 0 and
+            self.r[index+self.recentMemSize-1] == 0 and
+            torch.uniform() > self.nonTermProb then
+            valid = false
+        end
+    end
+    return self:get(index)
+end
+
+
+function trans:sample_one_backwards(curr_ind)
+    assert(self.numEntries > 1)
+    assert(curr_ind >= 1 and curr_ind <= self.bufferSize)
+    local index
+    local valid = false
+    while not valid do
+        index = self.numEntries - self.recentMemSize - curr_ind 
+        if self.t[index+self.recentMemSize-1] == 0 then
+            valid = true
+        end
+        if self.nonTermProb < 1 and self.t[index+self.recentMemSize] == 0 and
+            torch.uniform() > self.nonTermProb then
+            valid = false
+        end
+        if self.nonEventProb < 1 and self.t[index+self.recentMemSize] == 0 and
+            self.r[index+self.recentMemSize-1] == 0 and
+            torch.uniform() > self.nonTermProb then
+            valid = false
+        end
+    end
     return self:get(index)
 end
 
@@ -210,6 +262,75 @@ function trans:sample(batch_size)
 
     return buf_s[range], buf_a[range], buf_r[range], buf_s2[range], buf_term[range]
 end
+
+function trans:sample_sobol(batch_size)
+    local batch_size = batch_size or 1
+    assert(batch_size < self.bufferSize)
+    self.buf_ind = 1
+    -- Fill up the buffer array.
+    for buf_ind=1,batch_size do
+        local s, a, r, s2, term = self:sample_one_sobol(buf_ind,batch_size)
+        self.buf_s[buf_ind]:copy(s)
+        self.buf_a[buf_ind] = a
+        self.buf_r[buf_ind] = r
+        self.buf_s2[buf_ind]:copy(s2)
+        self.buf_term[buf_ind] = term
+    end
+    self.buf_s  = self.buf_s:float():div(255)
+    self.buf_s2 = self.buf_s2:float():div(255)
+    if self.gpu and self.gpu >= 0 then
+        self.gpu_s:copy(self.buf_s)
+        self.gpu_s2:copy(self.buf_s2)
+    end
+    -- Always look at the first 32 elements of the buffer 
+    local index = 1
+    local range = {{index, index+batch_size-1}}
+
+    -- Load those byte tensors into local variables
+    local buf_s, buf_s2, buf_a, buf_r, buf_term = self.buf_s, self.buf_s2,
+        self.buf_a, self.buf_r, self.buf_term
+    if self.gpu and self.gpu >=0  then
+        buf_s = self.gpu_s
+        buf_s2 = self.gpu_s2
+    end
+    -- return the data
+    return buf_s[range], buf_a[range], buf_r[range], buf_s2[range], buf_term[range]
+end 
+
+
+function trans:sample_backwards(batch_size)
+    local batch_size = batch_size or 1
+    assert(batch_size < self.bufferSize)
+    self.buf_ind = 1
+    -- Fill up the buffer array.
+    for buf_ind=1,batch_size do
+        local s, a, r, s2, term = self:sample_one_backwards(buf_ind)
+        self.buf_s[buf_ind]:copy(s)
+        self.buf_a[buf_ind] = a
+        self.buf_r[buf_ind] = r
+        self.buf_s2[buf_ind]:copy(s2)
+        self.buf_term[buf_ind] = term
+    end
+    self.buf_s  = self.buf_s:float():div(255)
+    self.buf_s2 = self.buf_s2:float():div(255)
+    if self.gpu and self.gpu >= 0 then
+        self.gpu_s:copy(self.buf_s)
+        self.gpu_s2:copy(self.buf_s2)
+    end
+    -- Always look at the first 32 elements of the buffer 
+    local index = 1
+    local range = {{index, index+batch_size-1}}
+
+    -- Load those byte tensors into local variables
+    local buf_s, buf_s2, buf_a, buf_r, buf_term = self.buf_s, self.buf_s2,
+        self.buf_a, self.buf_r, self.buf_term
+    if self.gpu and self.gpu >=0  then
+        buf_s = self.gpu_s
+        buf_s2 = self.gpu_s2
+    end
+    -- return the data
+    return buf_s[range], buf_a[range], buf_r[range], buf_s2[range], buf_term[range]
+end 
 
 
 function trans:concatFrames(index, use_recent)
