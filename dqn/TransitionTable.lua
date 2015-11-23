@@ -93,13 +93,15 @@ function trans:empty()
 end
 
 
-function trans:fill_buffer()
+function trans:fill_buffer(batch_size)
     assert(self.numEntries >= self.bufferSize)
     -- clear CPU buffers
     self.buf_ind = 1
     local ind
     for buf_ind=1,self.bufferSize do
         local s, a, r, s2, term = self:sample_one(1)
+        -- if you want to do stratified random sampling
+        -- local s, a, r, s2, term = self:sample_one_stratified(buf_ind,batch_size)
         self.buf_s[buf_ind]:copy(s)
         self.buf_a[buf_ind] = a
         self.buf_r[buf_ind] = r
@@ -113,6 +115,48 @@ function trans:fill_buffer()
         self.gpu_s2:copy(self.buf_s2)
     end
 end
+
+
+
+function trans:sample_one_stratified(curr_ind, size_of_batch)
+    assert(self.numEntries > 1)
+    assert(curr_ind >= 1 and curr_ind <= self.bufferSize)
+    assert(size_of_batch > 1)
+    local interval_size = math.floor((self.numEntries-self.recentMemSize - 1) / size_of_batch)
+    local desired_bucket = curr_ind % size_of_batch
+    local start_index = 2 + (desired_bucket-1)*interval_size
+    local end_index = start_index + interval_size - 1
+    if desired_bucket == 0
+        desired_bucket = desired_bucket + 32
+        start_index = 2 + (desired_bucket-1)*interval_size
+        end_index = self.numEntries-self.recentMemSize
+    end 
+    local index
+    local valid = false
+    while not valid do
+        -- start at 2 because of previous action
+        index = torch.random(start_index, end_index)
+        if self.t[index+self.recentMemSize-1] == 0 then
+            valid = true
+        end
+        if self.nonTermProb < 1 and self.t[index+self.recentMemSize] == 0 and
+            torch.uniform() > self.nonTermProb then
+            -- Discard non-terminal states with probability (1-nonTermProb).
+            -- Note that this is the terminal flag for s_{t+1}.
+            valid = false
+        end
+        if self.nonEventProb < 1 and self.t[index+self.recentMemSize] == 0 and
+            self.r[index+self.recentMemSize-1] == 0 and
+            torch.uniform() > self.nonTermProb then
+            -- Discard non-terminal or non-reward states with
+            -- probability (1-nonTermProb).
+            valid = false
+        end
+    end
+
+    return self:get(index)
+end
+
 
 
 function trans:sample_one()
@@ -149,7 +193,7 @@ function trans:sample(batch_size)
     assert(batch_size < self.bufferSize)
 
     if not self.buf_ind or self.buf_ind + batch_size - 1 > self.bufferSize then
-        self:fill_buffer()
+        self:fill_buffer(batch_size)
     end
 
     local index = self.buf_ind
