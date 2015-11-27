@@ -1,3 +1,5 @@
 *~
 torch
 dqn/*.t7
+roms/SPCINVAD.BIN
+roms/Stargn.bin
