@@ -18,6 +18,9 @@ function nql:__init(args)
     self.verbose    = args.verbose
     self.best       = args.best
 
+    -- my own additional variables
+    self.sample_type = args.sample_type or 1 
+
     --- epsilon annealing
     self.ep_start   = args.ep or 1
     self.ep         = self.ep_start -- Exploration probability.
@@ -242,7 +245,21 @@ function nql:qLearnMinibatch()
     -- w += alpha * (r + gamma max Q(s2,a2) - Q(s,a)) * dQ(s,a)/dw
     assert(self.transitions:size() > self.minibatch_size)
 
-    local s, a, r, s2, term = self.transitions:sample(self.minibatch_size)
+    local s, a, r, s2, term
+
+    if self.sample_type == 1 then 
+        s, a, r, s2, term = self.transitions:sample(self.minibatch_size)
+    elseif self.sample_type == 2 then 
+        s, a, r, s2, term = self.transitions:sample_stratified(self.minibatch_size)
+    elseif self.sample_type == 3 then 
+        s, a, r, s2, term = self.transitions:sample_sobol(self.minibatch_size)
+    elseif self.sample_type == 4 then
+        s, a, r, s2, term = self.transitions:sample_backwards(self.minibatch_size)
+    else 
+        s, a, r, s2, term = self.transitions:sample(self.minibatch_size)
+        -- this one should eventually become sample_reward_based
+    end 
+
 
     local targets, delta, q2_max = self:getQUpdate{s=s, a=a, r=r, s2=s2,
         term=term, update_qmax=true}
