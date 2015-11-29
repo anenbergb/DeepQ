@@ -98,14 +98,19 @@ function trans:empty()
 end
 
 
-function trans:fill_buffer(batch_size)
+function trans:fill_buffer(batch_size, branch)
     assert(self.numEntries >= self.bufferSize)
     -- clear CPU buffers
     self.buf_ind = 1
     local ind
     for buf_ind=1,self.bufferSize do
         -- if you want to do regular random sampling
-        local s, a, r, s2, term = self:sample_one(1)
+        local s, a, r, s2, term
+        if branch == 0 then 
+            s, a, r, s2, term = self:sample_one(1)
+        else  
+            s, a, r, s2, term = self:sample_one_stratified(buf_ind,batch_size)
+        end
         -- if you want to do stratified random sampling
         -- local s, a, r, s2, term = self:sample_one_stratified(buf_ind,batch_size)
         self.buf_s[buf_ind]:copy(s)
@@ -253,13 +258,13 @@ function trans:sample_one()
     return self:get(index)
 end
 
-
+-- regular random sampling
 function trans:sample(batch_size)
     local batch_size = batch_size or 1
     assert(batch_size < self.bufferSize)
 
     if not self.buf_ind or self.buf_ind + batch_size - 1 > self.bufferSize then
-        self:fill_buffer(batch_size)
+        self:fill_buffer(batch_size,0)
     end
 
     local index = self.buf_ind
@@ -277,6 +282,31 @@ function trans:sample(batch_size)
     return buf_s[range], buf_a[range], buf_r[range], buf_s2[range], buf_term[range]
 end
 
+-- stratified random sampling 
+function trans:sample_stratified(batch_size)
+    local batch_size = batch_size or 1
+    assert(batch_size < self.bufferSize)
+
+    if not self.buf_ind or self.buf_ind + batch_size - 1 > self.bufferSize then
+        self:fill_buffer(batch_size,1)
+    end
+
+    local index = self.buf_ind
+
+    self.buf_ind = self.buf_ind+batch_size
+    local range = {{index, index+batch_size-1}}
+
+    local buf_s, buf_s2, buf_a, buf_r, buf_term = self.buf_s, self.buf_s2,
+        self.buf_a, self.buf_r, self.buf_term
+    if self.gpu and self.gpu >=0  then
+        buf_s = self.gpu_s
+        buf_s2 = self.gpu_s2
+    end
+
+    return buf_s[range], buf_a[range], buf_r[range], buf_s2[range], buf_term[range]
+end
+
+-- quasi random sampling 
 function trans:sample_sobol(batch_size)
     local batch_size = batch_size or 1
     assert(batch_size < self.bufferSize)
@@ -311,7 +341,7 @@ function trans:sample_sobol(batch_size)
     return buf_s[range], buf_a[range], buf_r[range], buf_s2[range], buf_term[range]
 end 
 
-
+-- naive backwards sampling 
 function trans:sample_backwards(batch_size)
     local batch_size = batch_size or 1
     assert(batch_size < self.bufferSize)
