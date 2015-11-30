@@ -365,8 +365,8 @@ function nql:perceive(reward, rawstate, terminal, testing, testing_ep)
         --end 
     end
 
-    if self.numSteps % 1000 == 0 then 
-        print("Completed 1000 steps")
+    if self.numSteps % 1000 == 0 and self.numSteps > 0 then 
+        print("Iterations completed: ",self.numSteps)
     end 
 
     if self.numSteps == self.learn_start+1 and not testing then
