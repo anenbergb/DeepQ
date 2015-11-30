@@ -261,8 +261,7 @@ function nql:qLearnMinibatch()
         --print("Running backwards random sampling")
     elseif self.sample_type == 5 then 
         s, a, r, s2, term = self.transitions:sample_reward(self.minibatch_size, self.numSteps)
-        --print("Will eventually run reward-based random sampling")
-        -- this one should eventually become sample_reward_based
+        --print("Running reward-based random sampling")
     end 
 
 
@@ -315,8 +314,7 @@ function nql:sample_validation_data()
         s, a, r, s2, term = self.transitions:sample_backwards(self.valid_size, self.numSteps)
     elseif self.sample_type == 5 then 
         s, a, r, s2, term = self.transitions:sample_reward(self.valid_size, self.numSteps)
-        --print("Will eventually run reward-based random sampling")
-        -- this one should eventually become sample_reward_based
+        --print("Running reward-based random sampling")
     end 
     self.valid_s    = s:clone()
     self.valid_a    = a:clone()

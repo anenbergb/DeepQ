@@ -116,7 +116,8 @@ function trans:fill_buffer(batch_size, branch)
         self:clean_reward_list(self.reward_list_low,lower_bound)
         self:clean_reward_list(self.reward_list_medium,lower_bound)
         self:clean_reward_list(self.reward_list_high,lower_bound)
-        print('low = ', table.getn(self.reward_list_low), ' med = ', table.getn(self.reward_list_medium), ' high =',table.getn(self.reward_list_high))
+        -- see the reward list size distribution
+        -- print('low = ', table.getn(self.reward_list_low), ' med = ', table.getn(self.reward_list_medium), ' high =',table.getn(self.reward_list_high))
     end 
     for buf_ind=1,self.bufferSize do
         -- if you want to do regular random sampling
