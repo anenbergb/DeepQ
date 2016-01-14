@@ -18,6 +18,9 @@ function nql:__init(args)
     self.verbose    = args.verbose
     self.best       = args.best
 
+    -- my own additional variables
+    self.sample_type = args.sample_type or 1 
+
     --- epsilon annealing
     self.ep_start   = args.ep or 1
     self.ep         = self.ep_start -- Exploration probability.
@@ -242,7 +245,25 @@ function nql:qLearnMinibatch()
     -- w += alpha * (r + gamma max Q(s2,a2) - Q(s,a)) * dQ(s,a)/dw
     assert(self.transitions:size() > self.minibatch_size)
 
-    local s, a, r, s2, term = self.transitions:sample(self.minibatch_size)
+    local s, a, r, s2, term
+
+    if self.sample_type == 1 then 
+        s, a, r, s2, term = self.transitions:sample(self.minibatch_size)
+        --print("Running random sampling")
+    elseif self.sample_type == 2 then 
+        s, a, r, s2, term = self.transitions:sample_stratified(self.minibatch_size)
+        --print("Running stratified random sampling")
+    elseif self.sample_type == 3 then 
+        s, a, r, s2, term = self.transitions:sample_sobol(self.minibatch_size)
+        --print("Running sobol random sampling")
+    elseif self.sample_type == 4 then
+        s, a, r, s2, term = self.transitions:sample_backwards(self.minibatch_size, self.numSteps)
+        --print("Running backwards random sampling")
+    elseif self.sample_type == 5 then 
+        s, a, r, s2, term = self.transitions:sample_reward(self.minibatch_size, self.numSteps)
+        --print("Running reward-based random sampling")
+    end 
+
 
     local targets, delta, q2_max = self:getQUpdate{s=s, a=a, r=r, s2=s2,
         term=term, update_qmax=true}
@@ -279,7 +300,22 @@ end
 
 
 function nql:sample_validation_data()
-    local s, a, r, s2, term = self.transitions:sample(self.valid_size)
+    local s, a, r, s2, term
+    if self.sample_type == 1 then 
+        s, a, r, s2, term = self.transitions:sample(self.valid_size)
+        --print("Running random sampling")
+    elseif self.sample_type == 2 then 
+        s, a, r, s2, term = self.transitions:sample_stratified(self.valid_size)
+        --print("Running stratified random sampling")
+    elseif self.sample_type == 3 then 
+        s, a, r, s2, term = self.transitions:sample_sobol(self.valid_size)
+        --print("Running sobol random sampling")
+    elseif self.sample_type == 4 then
+        s, a, r, s2, term = self.transitions:sample_backwards(self.valid_size, self.numSteps)
+    elseif self.sample_type == 5 then 
+        s, a, r, s2, term = self.transitions:sample_reward(self.valid_size, self.numSteps)
+        --print("Running reward-based random sampling")
+    end 
     self.valid_s    = s:clone()
     self.valid_a    = a:clone()
     self.valid_r    = r:clone()
@@ -320,7 +356,18 @@ function nql:perceive(reward, rawstate, terminal, testing, testing_ep)
     if self.lastState and not testing then
         self.transitions:add(self.lastState, self.lastAction, reward,
                              self.lastTerminal, priority)
+
+        if self.sample_type == 5 then 
+            self.transitions:add_reward_index(reward,self.numSteps)
+        end 
+        --if reward ~= 0 then 
+            --print(reward)
+        --end 
     end
+
+    if self.numSteps % 1000 == 0 and self.numSteps > 0 then 
+        print("Iterations completed: ",self.numSteps)
+    end 
 
     if self.numSteps == self.learn_start+1 and not testing then
         self:sample_validation_data()
